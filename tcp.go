@@ -2,7 +2,6 @@ package gotun2socks
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"strings"
 	"sync"
@@ -244,14 +243,14 @@ func rstByPacket(pkt *tcpPacket) *tcpPacket {
 }
 
 func (tt *tcpConnTrack) changeState(nxt tcpState) {
-	// log.Printf("### [%s -> %s]", tcpstateString(tt.state), tcpstateString(nxt))
+	// DEBUG.Printf("### [%s -> %s]", tcpstateString(tt.state), tcpstateString(nxt))
 	tt.state = nxt
 }
 
 func (tt *tcpConnTrack) validAck(pkt *tcpPacket) bool {
 	ret := (pkt.tcp.Ack == tt.nxtSeq)
 	if !ret {
-		// log.Printf("WARNING: invalid ack: recvd: %d, expecting: %d", pkt.tcp.Ack, tt.nxtSeq)
+		// DEBUG.Printf("WARNING: invalid ack: recvd: %d, expecting: %d", pkt.tcp.Ack, tt.nxtSeq)
 	}
 	return ret
 }
@@ -259,9 +258,9 @@ func (tt *tcpConnTrack) validAck(pkt *tcpPacket) bool {
 func (tt *tcpConnTrack) validSeq(pkt *tcpPacket) bool {
 	ret := (pkt.tcp.Seq == tt.rcvNxtSeq)
 	if !ret {
-		// log.Printf("WARNING: invalid seq: recvd: %d, expecting: %d", pkt.tcp.Seq, tt.rcvNxtSeq)
+		// DEBUG.Printf("WARNING: invalid seq: recvd: %d, expecting: %d", pkt.tcp.Seq, tt.rcvNxtSeq)
 		// if (tt.rcvNxtSeq - pkt.tcp.Seq) == 1 && tt.state == ESTABLISHED {
-		// 	log.Printf("(probably a keep-alive message)")
+		// 	DEBUG.Printf("(probably a keep-alive message)")
 		// }
 	}
 	return ret
@@ -288,7 +287,7 @@ func (tt *tcpConnTrack) relayPayload(pkt *tcpPacket) bool {
 }
 
 func (tt *tcpConnTrack) send(pkt *tcpPacket) {
-	// log.Printf("<-- [TCP][%s][%s][seq:%d][ack:%d][payload:%d]", tt.id, tcpflagsString(pkt.tcp), pkt.tcp.Seq, pkt.tcp.Ack, len(pkt.tcp.Payload))
+	// DEBUG.Printf("<-- [TCP][%s][%s][seq:%d][ack:%d][payload:%d]", tt.id, tcpflagsString(pkt.tcp), pkt.tcp.Seq, pkt.tcp.Ack, len(pkt.tcp.Payload))
 	if pkt.tcp.ACK {
 		tt.lastAck = pkt.tcp.Ack
 	}
@@ -402,7 +401,7 @@ func (tt *tcpConnTrack) stateClosed(syn *tcpPacket) (continu bool, release bool)
 	for i := 0; i < 2; i++ {
 		tt.socksConn, e = dialLocalSocks(tt.localSocksAddr)
 		if e != nil {
-			log.Printf("fail to connect SOCKS proxy: %s", e)
+			DEBUG.Printf("fail to connect SOCKS proxy: %s", e)
 		} else {
 			// no timeout
 			tt.socksConn.SetDeadline(time.Time{})
@@ -412,7 +411,7 @@ func (tt *tcpConnTrack) stateClosed(syn *tcpPacket) (continu bool, release bool)
 	if tt.socksConn == nil {
 		resp := rstByPacket(syn)
 		tt.toTunCh <- resp.wire
-		// log.Printf("<-- [TCP][%s][RST]", tt.id)
+		// DEBUG.Printf("<-- [TCP][%s][RST]", tt.id)
 		return false, true
 	}
 	// context variables
@@ -432,20 +431,20 @@ func (tt *tcpConnTrack) tcpSocks2Tun(dstIP net.IP, dstPort uint16, conn net.Conn
 		DstPort:  dstPort,
 	})
 	if e != nil {
-		log.Printf("error to send socks request: %s", e)
+		DEBUG.Printf("error to send socks request: %s", e)
 		conn.Close()
 		close(closeCh)
 		return
 	}
 	reply, e := gosocks.ReadSocksReply(conn)
 	if e != nil {
-		log.Printf("error to read socks reply: %s", e)
+		DEBUG.Printf("error to read socks reply: %s", e)
 		conn.Close()
 		close(closeCh)
 		return
 	}
 	if reply.Rep != gosocks.SocksSucceeded {
-		log.Printf("socks connect request fail, retcode: %d", reply.Rep)
+		DEBUG.Printf("socks connect request fail, retcode: %d", reply.Rep)
 		conn.Close()
 		close(closeCh)
 		return
@@ -499,7 +498,7 @@ func (tt *tcpConnTrack) tcpSocks2Tun(dstIP net.IP, dstPort uint16, conn net.Conn
 
 		n, e := conn.Read(buf[:cur])
 		if e != nil {
-			log.Printf("error to read from socks: %s", e)
+			DEBUG.Printf("error to read from socks: %s", e)
 			conn.Close()
 			break
 		} else {
@@ -528,7 +527,7 @@ func (tt *tcpConnTrack) stateSynRcvd(pkt *tcpPacket) (continu bool, release bool
 		if !pkt.tcp.RST {
 			resp := rstByPacket(pkt)
 			tt.toTunCh <- resp
-			// log.Printf("<-- [TCP][%s][RST] continue", tt.id)
+			// DEBUG.Printf("<-- [TCP][%s][RST] continue", tt.id)
 		}
 		return true, true
 	}
@@ -699,7 +698,7 @@ func (tt *tcpConnTrack) run() {
 
 		select {
 		case pkt := <-tt.input:
-			// log.Printf("--> [TCP][%s][%s][%s][seq:%d][ack:%d][payload:%d]", tt.id, tcpstateString(tt.state), tcpflagsString(pkt.tcp), pkt.tcp.Seq, pkt.tcp.Ack, len(pkt.tcp.Payload))
+			// DEBUG.Printf("--> [TCP][%s][%s][%s][seq:%d][ack:%d][payload:%d]", tt.id, tcpstateString(tt.state), tcpflagsString(pkt.tcp), pkt.tcp.Seq, pkt.tcp.Ack, len(pkt.tcp.Payload))
 			var continu, release bool
 
 			tt.updateSendWindow(pkt)
@@ -754,7 +753,7 @@ func (tt *tcpConnTrack) run() {
 
 		case <-tt.quitByOther:
 			// who closes this channel should be responsible to clear track map
-			log.Printf("tcpConnTrack quitByOther")
+			DEBUG.Printf("tcpConnTrack quitByOther")
 			if tt.socksConn != nil {
 				tt.socksConn.Close()
 			}
@@ -798,7 +797,7 @@ func (t2s *Tun2Socks) createTCPConnTrack(id string, ip *packet.IPv4, tcp *packet
 
 	t2s.tcpConnTrackMap[id] = track
 	go track.run()
-	log.Printf("tracking %d TCP connections", len(t2s.tcpConnTrackMap))
+	DEBUG.Printf("tracking %d TCP connections", len(t2s.tcpConnTrackMap))
 	return track
 }
 
@@ -814,7 +813,7 @@ func (t2s *Tun2Socks) clearTCPConnTrack(id string) {
 	defer t2s.tcpConnTrackLock.Unlock()
 
 	delete(t2s.tcpConnTrackMap, id)
-	log.Printf("tracking %d TCP connections", len(t2s.tcpConnTrackMap))
+	DEBUG.Printf("tracking %d TCP connections", len(t2s.tcpConnTrackMap))
 }
 
 func (t2s *Tun2Socks) tcp(raw []byte, ip *packet.IPv4, tcp *packet.TCP) {
@@ -826,15 +825,15 @@ func (t2s *Tun2Socks) tcp(raw []byte, ip *packet.IPv4, tcp *packet.TCP) {
 	} else {
 		// ignore RST, if there is no track of this connection
 		if tcp.RST {
-			// log.Printf("--> [TCP][%s][%s]", connID, tcpflagsString(tcp))
+			// DEBUG.Printf("--> [TCP][%s][%s]", connID, tcpflagsString(tcp))
 			return
 		}
 		// return a RST to non-SYN packet
 		if !tcp.SYN {
-			// log.Printf("--> [TCP][%s][%s]", connID, tcpflagsString(tcp))
+			// DEBUG.Printf("--> [TCP][%s][%s]", connID, tcpflagsString(tcp))
 			resp := rst(ip.SrcIP, ip.DstIP, tcp.SrcPort, tcp.DstPort, tcp.Seq, tcp.Ack, uint32(len(tcp.Payload)))
 			t2s.writeCh <- resp
-			// log.Printf("<-- [TCP][%s][RST]", connID)
+			// DEBUG.Printf("<-- [TCP][%s][RST]", connID)
 			return
 		}
 		pkt := copyTCPPacket(raw, ip, tcp)

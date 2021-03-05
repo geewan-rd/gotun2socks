@@ -2,7 +2,6 @@ package gotun2socks
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"strings"
 	"sync"
@@ -166,7 +165,7 @@ func (ut *udpConnTrack) run() {
 	for i := 0; i < 2; i++ {
 		ut.socksConn, e = dialLocalSocks(ut.localSocksAddr)
 		if e != nil {
-			log.Printf("fail to connect SOCKS proxy: %s", e)
+			DEBUG.Printf("fail to connect SOCKS proxy: %s", e)
 		} else {
 			// need to finish handshake in 1 mins
 			ut.socksConn.SetDeadline(time.Now().Add(time.Minute * 1))
@@ -188,7 +187,7 @@ func (ut *udpConnTrack) run() {
 		Zone: socksAddr.Zone,
 	})
 	if err != nil {
-		log.Printf("error in binding local UDP: %s", err)
+		DEBUG.Printf("error in binding local UDP: %s", err)
 		ut.socksConn.Close()
 		close(ut.socksClosed)
 		close(ut.quitBySelf)
@@ -204,7 +203,7 @@ func (ut *udpConnTrack) run() {
 		DstPort:  0,
 	})
 	if e != nil {
-		log.Printf("error to send socks request: %s", e)
+		DEBUG.Printf("error to send socks request: %s", e)
 		ut.socksConn.Close()
 		close(ut.socksClosed)
 		close(ut.quitBySelf)
@@ -213,7 +212,7 @@ func (ut *udpConnTrack) run() {
 	}
 	reply, e := gosocks.ReadSocksReply(ut.socksConn)
 	if e != nil {
-		log.Printf("error to read socks reply: %s", e)
+		DEBUG.Printf("error to read socks reply: %s", e)
 		ut.socksConn.Close()
 		close(ut.socksClosed)
 		close(ut.quitBySelf)
@@ -221,7 +220,7 @@ func (ut *udpConnTrack) run() {
 		return
 	}
 	if reply.Rep != gosocks.SocksSucceeded {
-		log.Printf("socks connect request fail, retcode: %d", reply.Rep)
+		DEBUG.Printf("socks connect request fail, retcode: %d", reply.Rep)
 		ut.socksConn.Close()
 		close(ut.socksClosed)
 		close(ut.quitBySelf)
@@ -258,12 +257,12 @@ func (ut *udpConnTrack) run() {
 				return
 			}
 			if pkt.Addr.String() != relayAddr.String() {
-				log.Printf("response relayed from %s, expect %s", pkt.Addr.String(), relayAddr.String())
+				DEBUG.Printf("response relayed from %s, expect %s", pkt.Addr.String(), relayAddr.String())
 				continue
 			}
 			udpReq, err := gosocks.ParseUDPRequest(pkt.Data)
 			if err != nil {
-				log.Printf("error to parse UDP request from relay: %s", err)
+				DEBUG.Printf("error to parse UDP request from relay: %s", err)
 				continue
 			}
 			if udpReq.Frag != gosocks.SocksNoFragment {
@@ -274,7 +273,7 @@ func (ut *udpConnTrack) run() {
 				// DNS-without-fragment only has one request-response
 				end := time.Now()
 				ms := end.Sub(start).Nanoseconds() / 1000000
-				log.Printf("DNS session response received: %d ms", ms)
+				DEBUG.Printf("DNS session response received: %d ms", ms)
 				if ut.t2s.cache != nil {
 					ut.t2s.cache.store(udpReq.Data)
 				}
@@ -299,7 +298,7 @@ func (ut *udpConnTrack) run() {
 			_, err := udpBind.WriteToUDP(datagram, relayAddr)
 			releaseUDPPacket(pkt)
 			if err != nil {
-				log.Printf("error to send UDP packet to relay: %s", err)
+				DEBUG.Printf("error to send UDP packet to relay: %s", err)
 				ut.socksConn.Close()
 				udpBind.Close()
 				close(ut.quitBySelf)
@@ -325,7 +324,7 @@ func (ut *udpConnTrack) run() {
 			return
 
 		case <-ut.quitByOther:
-			log.Printf("udpConnTrack quitByOther")
+			DEBUG.Printf("udpConnTrack quitByOther")
 			ut.socksConn.Close()
 			udpBind.Close()
 			close(quitUDP)
@@ -340,7 +339,7 @@ func (ut *udpConnTrack) newPacket(pkt *udpPacket) {
 	case <-ut.quitByOther:
 	case <-ut.quitBySelf:
 	case ut.fromTunCh <- pkt:
-		// log.Printf("--> [UDP][%s]", ut.id)
+		// DEBUG.Printf("--> [UDP][%s]", ut.id)
 	}
 }
 
@@ -349,7 +348,7 @@ func (t2s *Tun2Socks) clearUDPConnTrack(id string) {
 	defer t2s.udpConnTrackLock.Unlock()
 
 	delete(t2s.udpConnTrackMap, id)
-	log.Printf("tracking %d UDP connections", len(t2s.udpConnTrackMap))
+	DEBUG.Printf("tracking %d UDP connections", len(t2s.udpConnTrackMap))
 }
 
 func (t2s *Tun2Socks) getUDPConnTrack(id string, ip *packet.IPv4, udp *packet.UDP) *udpConnTrack {
@@ -381,7 +380,7 @@ func (t2s *Tun2Socks) getUDPConnTrack(id string, ip *packet.IPv4, udp *packet.UD
 
 		t2s.udpConnTrackMap[id] = track
 		go track.run()
-		log.Printf("tracking %d UDP connections", len(t2s.udpConnTrackMap))
+		DEBUG.Printf("tracking %d UDP connections", len(t2s.udpConnTrackMap))
 		return track
 	}
 }
@@ -489,7 +488,7 @@ func (c *dnsCache) store(payload []byte) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	key := cacheKey(resp.Question[0])
-	log.Printf("cache DNS response for %s", key)
+	DEBUG.Printf("cache DNS response for %s", key)
 	c.storage[key] = &dnsCacheEntry{
 		msg: resp,
 		exp: time.Now().Add(time.Duration(resp.Answer[0].Header().Ttl) * time.Second),

@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ const (
 )
 
 var (
+	DEBUG                                 = log.New(io.Discard, "[Tun2socks]", log.LstdFlags)
 	localSocksDialer *gosocks.SocksDialer = &gosocks.SocksDialer{
 		Auth:    &gosocks.AnonymousClientAuthenticator{},
 		Timeout: 1 * time.Second,
@@ -25,6 +27,14 @@ var (
 	_, ip2, _ = net.ParseCIDR("172.16.0.0/12")
 	_, ip3, _ = net.ParseCIDR("192.168.0.0/24")
 )
+
+func Verbose(enable bool) {
+	if enable {
+		DEBUG.SetOutput(os.Stdout)
+	} else {
+		DEBUG.SetOutput(io.Discard)
+	}
+}
 
 type Tun2Socks struct {
 	dev            io.ReadWriteCloser
@@ -114,7 +124,7 @@ func (t2s *Tun2Socks) Run() {
 					releaseIPPacket(ip)
 				}
 			case <-t2s.writerStopCh:
-				log.Printf("quit tun2socks writer")
+				DEBUG.Printf("quit tun2socks writer")
 				return
 			}
 		}
@@ -132,13 +142,13 @@ func (t2s *Tun2Socks) Run() {
 		n, e := t2s.dev.Read(buf[:])
 		if e != nil {
 			// TODO: stop at critical error
-			log.Printf("read packet error: %s", e)
+			DEBUG.Printf("read packet error: %s", e)
 			return
 		}
 		data := buf[:n]
 		e = packet.ParseIPv4(data, &ip)
 		if e != nil {
-			log.Printf("error to parse IPv4: %s", e)
+			DEBUG.Printf("error to parse IPv4: %s", e)
 			continue
 		}
 		if t2s.publicOnly {
@@ -164,7 +174,7 @@ func (t2s *Tun2Socks) Run() {
 		case packet.IPProtocolTCP:
 			e = packet.ParseTCP(ip.Payload, &tcp)
 			if e != nil {
-				log.Printf("error to parse TCP: %s", e)
+				DEBUG.Printf("error to parse TCP: %s", e)
 				continue
 			}
 			t2s.tcp(data, &ip, &tcp)
@@ -172,14 +182,14 @@ func (t2s *Tun2Socks) Run() {
 		case packet.IPProtocolUDP:
 			e = packet.ParseUDP(ip.Payload, &udp)
 			if e != nil {
-				log.Printf("error to parse UDP: %s", e)
+				DEBUG.Printf("error to parse UDP: %s", e)
 				continue
 			}
 			t2s.udp(data, &ip, &udp)
 
 		default:
 			// Unsupported packets
-			log.Printf("Unsupported packet: protocol %d", ip.Protocol)
+			DEBUG.Printf("Unsupported packet: protocol %d", ip.Protocol)
 		}
 	}
 }
