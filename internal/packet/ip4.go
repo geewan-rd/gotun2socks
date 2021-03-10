@@ -143,6 +143,9 @@ func ParseIPv4(pkt []byte, ip4 *IPv4) error {
 			opt.OptionLength = 1
 		default:
 			opt.OptionLength = rest[1]
+			if opt.OptionLength <= 2 {
+				return fmt.Errorf("Opt leagth(%d) too short", opt.OptionLength)
+			}
 			opt.OptionData = rest[2:opt.OptionLength]
 		}
 		if len(rest) >= int(opt.OptionLength) {
@@ -244,4 +247,3 @@ func (ip *IPv4) Serialize(hdr []byte, dataLen int) error {
 	binary.BigEndian.PutUint16(hdr[10:], ip.Checksum)
 	return nil
 }
-
